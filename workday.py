@@ -1,7 +1,7 @@
 import requests
 from storage import init_db, has_seen, mark_seen
 from emailer import send_email, EMAIL_ADDRESS
-from filters import is_relevant_job, get_job_tag, render_tag_badge
+from filters import is_relevant_job, is_relevant_job_llm, get_job_tag, render_tag_badge
 
 def fetch_workday_jobs(tenant, host, site):
     url = f"https://{tenant}.{host}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs"
@@ -40,7 +40,7 @@ def run_workday_check(tenant, host, site, company_label):
         normalized = normalize_job(job, tenant, host, site, company_label)
         if not has_seen(conn, normalized["id"]):
             mark_seen(conn, normalized)
-            if is_relevant_job(normalized):
+            if is_relevant_job(normalized) and is_relevant_job_llm(normalized):
                 new_jobs.append(normalized)
 
     return new_jobs

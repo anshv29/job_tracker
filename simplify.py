@@ -5,7 +5,7 @@ import requests
 
 from storage import init_db, has_seen, mark_seen
 from emailer import send_email, EMAIL_ADDRESS
-from filters import is_relevant_job, get_job_tag, render_tag_badge
+from filters import is_relevant_job, is_relevant_job_llm, get_job_tag, render_tag_badge
 
 LISTINGS_URL = "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/.github/scripts/listings.json"
 
@@ -56,7 +56,7 @@ def run_simplify_check():
         normalized = normalize_job(raw_job)
         if not has_seen(conn, normalized["id"]):
             mark_seen(conn, normalized)
-            if is_relevant_job(normalized):
+            if is_relevant_job(normalized) and is_relevant_job_llm(normalized):
                 new_jobs.append(normalized)
 
     return new_jobs

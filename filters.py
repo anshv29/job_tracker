@@ -1,4 +1,7 @@
+import os
 import re
+
+import anthropic
 
 YEAR_TERMS = [
     "2027",
@@ -222,3 +225,78 @@ def render_tag_badge(tag):
         "border-radius:10px; font-size:11px; font-weight:600; "
         f'background-color:{style["bg"]}; color:{style["fg"]};">{tag}</span>'
     )
+
+
+# --- LLM second-stage filter -------------------------------------------------
+#
+# Runs only on jobs that already passed is_relevant_job(). It's a precision
+# gate on top of the keyword filter's recall, not a replacement for it - the
+# keyword filter still decides what's even worth spending an API call on.
+
+ANTHROPIC_MODEL = "claude-haiku-4-5"
+_MAX_DESCRIPTION_CHARS = 3000  # keeps token spend predictable; the classification
+                                # signal is almost always in the opening paragraphs
+
+_client = None
+
+
+def _get_client():
+    global _client
+    if _client is None:
+        _client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+    return _client
+
+
+CLASSIFICATION_PROMPT = """You are screening a job posting for a college student targeting Summer 2027 internships in Software Engineering, Trading, Quant, Capital Markets, Finance, or Data.
+
+Classify this posting against ALL of the following criteria. Answer YES only if every criterion is satisfied.
+
+1. TIMING: The role must be for Summer 2027, or be an internship/co-op whose timing would clearly land in Summer 2027 - including postings that target "Class of 2027", "Class of 2028", or "Class of 2029" students (these are the typical graduating classes recruited for Summer 2027 internships).
+2. LEVEL: The role must be an internship, co-op, or student/early-talent program. It must NOT be a full-time role, NOT a senior/experienced-level role, and must NOT require prior full-time work experience.
+3. DOMAIN: The actual work described must be genuinely relevant to at least one of: Software Engineering (SWE), Trading, Quantitative roles (Quant), Capital Markets, Finance (broadly), or Data (including Data Analyst, Data Science, Data Engineering, Business Analytics, and Business Intelligence internships/co-ops). Judge by the substance of the work, not just whether the title literally contains one of these words - for example, a "Business Analytics Co-op" or "Strategy & Insights Intern" whose description is genuinely data-analysis-focused should count as YES for Data, even without an obvious keyword match.
+
+Respond in EXACTLY this two-line format and nothing else:
+ANSWER: YES or NO
+REASON: <one short sentence>
+
+Job title: {title}
+Job description: {description}"""
+
+
+def classify_job_with_llm(title, description):
+    """Returns True/False, or None if the API call couldn't be completed."""
+    prompt = CLASSIFICATION_PROMPT.format(
+        title=title or "",
+        description=(description or "")[:_MAX_DESCRIPTION_CHARS],
+    )
+
+    try:
+        client = _get_client()
+        response = client.messages.create(
+            model=ANTHROPIC_MODEL,
+            max_tokens=256,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = next((b.text for b in response.content if b.type == "text"), "")
+        first_line = text.strip().splitlines()[0] if text.strip() else ""
+        return "YES" in first_line.upper()
+    except anthropic.RateLimitError as e:
+        print(f"LLM classification rate-limited: {e}")
+    except anthropic.APIConnectionError as e:
+        print(f"LLM classification network error: {e}")
+    except anthropic.APIStatusError as e:
+        print(f"LLM classification API error ({e.status_code}): {e.message}")
+    except Exception as e:
+        print(f"LLM classification unexpected error: {e}")
+
+    return None
+
+
+def is_relevant_job_llm(job):
+    result = classify_job_with_llm(job.get("title", ""), job.get("description", ""))
+    if result is None:
+        # Couldn't get an answer from the API for any reason - trust the
+        # keyword filter's verdict (this is only called on jobs that already
+        # passed it) rather than silently dropping a possibly-good job.
+        return True
+    return result
