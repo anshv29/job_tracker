@@ -11,7 +11,7 @@ def fetch_workday_jobs(tenant, host, site):
         "offset": 0,
         "searchText": ""
     }
-    response = requests.post(url, json=payload)
+    response = requests.post(url, json=payload, timeout=15)
     if response.status_code != 200:
         return []
     data = response.json()

@@ -2,7 +2,10 @@ name: Job Scraper
 
 on:
   schedule:
-    - cron: "0 * * * *"
+    # :17 instead of :00 - GitHub documents that the top of the hour is the
+    # busiest time for scheduled workflows across all of GitHub and can see
+    # extra delay; an off-peak minute avoids adding to that congestion.
+    - cron: "17 * * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -15,6 +18,11 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
+    # Hard backstop: without this, a hung network call falls back to GitHub's
+    # own 360-minute default, and our concurrency group (below) queues every
+    # later scheduled trigger behind it instead of canceling it - that combo
+    # is what produced the multi-hour gaps between runs.
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
