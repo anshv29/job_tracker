@@ -78,27 +78,37 @@ def build_html_table(company_label, jobs):
     return html
 
 def main():
-    banks = [
+    companies = [
         {"tenant": "td", "host": "wd3", "site": "TD_Bank_Careers", "label": "TD"},
         {"tenant": "rbc", "host": "wd3", "site": "RBCEARLYTALENT1", "label": "RBC (Early Talent)"},
         {"tenant": "cibc", "host": "wd3", "site": "campus", "label": "CIBC (Campus)"},
+        {"tenant": "bmo", "host": "wd3", "site": "External", "label": "BMO"},
+        {"tenant": "cppib", "host": "wd10", "site": "cppinvestments", "label": "CPP Investments"},
+        {"tenant": "otppb", "host": "wd3", "site": "OntarioTeachers_Careers", "label": "Ontario Teachers' Pension Plan"},
+        {"tenant": "investpsp", "host": "wd3", "site": "psp_careers", "label": "PSP Investments"},
+        {"tenant": "sunlife", "host": "wd3", "site": "Experienced-Jobs", "label": "Sun Life Financial"},
+        {"tenant": "manulife", "host": "wd3", "site": "MFCJH_Jobs", "label": "Manulife"},
+        {"tenant": "brookfield", "host": "wd5", "site": "brookfield", "label": "Brookfield Asset Management"},
+        {"tenant": "bb", "host": "wd3", "site": "BlackBerry", "label": "BlackBerry"},
+        {"tenant": "cae", "host": "wd3", "site": "career", "label": "CAE"},
+        {"tenant": "clio", "host": "wd3", "site": "ClioCareerSite", "label": "Clio"},
     ]
 
-    for bank in banks:
-        new_jobs = run_workday_check(bank["tenant"], bank["host"], bank["site"], bank["label"])
-        print(f"{bank['label']}: {len(new_jobs)} new relevant jobs")
+    for company in companies:
+        new_jobs = run_workday_check(company["tenant"], company["host"], company["site"], company["label"])
+        print(f"{company['label']}: {len(new_jobs)} new relevant jobs")
 
         if new_jobs:
-            html_body = build_html_table(bank["label"], new_jobs)
+            html_body = build_html_table(company["label"], new_jobs)
             send_email(
                 to_address=EMAIL_ADDRESS,
-                subject=f"{len(new_jobs)} new job(s) at {bank['label']}",
+                subject=f"{len(new_jobs)} new job(s) at {company['label']}",
                 body=html_body,
                 is_html=True
             )
-            print(f"Sent email for {bank['label']}")
+            print(f"Sent email for {company['label']}")
         else:
-            print(f"No new jobs at {bank['label']}, no email sent")
+            print(f"No new jobs at {company['label']}, no email sent")
 
 if __name__ == "__main__":
     main()
