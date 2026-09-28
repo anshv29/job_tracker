@@ -11,7 +11,7 @@ import requests
 import db
 from storage import init_db, has_seen, mark_seen
 from emailer import send_email, EMAIL_ADDRESS
-from filters import is_relevant_job, is_relevant_job_llm, get_job_tag, render_tag_badge
+from filters import is_relevant_job, classify_job, passes_llm_gate, get_job_tag, render_tag_badge
 
 REGISTRY_PATH = "registry.csv"
 RATE_LIMIT_SECONDS = 1.0
@@ -57,9 +57,11 @@ def run_greenhouse_check(company_slug, company_label):
         normalized = normalize_job(job, company_label)
         if not has_seen(conn, normalized["id"]):
             mark_seen(conn, normalized)
-            if is_relevant_job(normalized) and is_relevant_job_llm(normalized):
-                new_jobs.append(normalized)
-                db.save_job(normalized, source="greenhouse")
+            if is_relevant_job(normalized):
+                classification = classify_job(normalized)
+                if passes_llm_gate(classification):
+                    new_jobs.append(normalized)
+                    db.save_job(normalized, source="greenhouse", classification=classification)
 
     return new_jobs
 

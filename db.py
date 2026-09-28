@@ -3,7 +3,8 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 
-from ats import detect_ats
+from ats import resolve_ats
+import rules
 
 load_dotenv()
 
@@ -110,16 +111,18 @@ def insert_application(conn, job, source, ats, status="found", status_reason=Non
         return False
 
 
-def save_job(job, source, **extra):
-    """One call for the connectors: connect, detect the ATS, insert.
+def save_job(job, source, classification):
+    """One call for the connectors: detect the ATS, decide the status, insert.
 
-    Every connector needs these same three steps, so they live here once.
+    Every connector needs these same steps, so they live here once.
     A missing connection just means the row isn't saved, the email still goes.
     """
     conn = get_connection()
     if conn is None:
         return False
-    return insert_application(conn, job, source=source, ats=detect_ats(job["url"]), **extra)
+    ats = resolve_ats(job["url"], source)
+    decision = rules.evaluate(job, classification, ats)
+    return insert_application(conn, job, source=source, ats=ats, **decision)
 
 
 def update_application(conn, job_key, **fields):

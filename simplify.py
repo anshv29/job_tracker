@@ -4,9 +4,10 @@ from zoneinfo import ZoneInfo
 import requests
 
 import db
+from enrich import enrich_job
 from storage import init_db, has_seen, mark_seen
 from emailer import send_email, EMAIL_ADDRESS
-from filters import is_relevant_job, is_relevant_job_llm, get_job_tag, render_tag_badge
+from filters import is_relevant_job, classify_job, passes_llm_gate, get_job_tag, render_tag_badge
 
 LISTINGS_URL = "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/.github/scripts/listings.json"
 
@@ -43,6 +44,7 @@ def normalize_job(raw_job):
         "url": raw_job["url"],
         "description": description,
         "posted": to_eastern(raw_job.get("date_posted")),
+        "has_full_text": False,
     }
 
 
@@ -57,9 +59,12 @@ def run_simplify_check():
         normalized = normalize_job(raw_job)
         if not has_seen(conn, normalized["id"]):
             mark_seen(conn, normalized)
-            if is_relevant_job(normalized) and is_relevant_job_llm(normalized):
-                new_jobs.append(normalized)
-                db.save_job(normalized, source="simplify")
+            if is_relevant_job(normalized):
+                enrich_job(normalized)
+                classification = classify_job(normalized)
+                if passes_llm_gate(classification):
+                    new_jobs.append(normalized)
+                    db.save_job(normalized, source="simplify", classification=classification)
 
     return new_jobs
 

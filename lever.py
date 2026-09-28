@@ -7,9 +7,10 @@ from zoneinfo import ZoneInfo
 import requests
 
 import db
+from greenhouse import strip_html
 from storage import init_db, has_seen, mark_seen
 from emailer import send_email, EMAIL_ADDRESS
-from filters import is_relevant_job, is_relevant_job_llm, get_job_tag, render_tag_badge
+from filters import is_relevant_job, classify_job, passes_llm_gate, get_job_tag, render_tag_badge
 
 REGISTRY_PATH = "registry.csv"
 RATE_LIMIT_SECONDS = 1.0
@@ -39,7 +40,7 @@ def normalize_job(raw_job, company_label):
     parts = [raw_job.get("descriptionPlain") or ""]
     for section in raw_job.get("lists") or []:
         parts.append(section.get("text") or "")
-        parts.append(section.get("content") or "")
+        parts.append(strip_html(section.get("content") or ""))
     parts.append(raw_job.get("additionalPlain") or "")
 
     return {
@@ -62,9 +63,11 @@ def run_lever_check(company_slug, company_label):
         normalized = normalize_job(job, company_label)
         if not has_seen(conn, normalized["id"]):
             mark_seen(conn, normalized)
-            if is_relevant_job(normalized) and is_relevant_job_llm(normalized):
-                new_jobs.append(normalized)
-                db.save_job(normalized, source="lever")
+            if is_relevant_job(normalized):
+                classification = classify_job(normalized)
+                if passes_llm_gate(classification):
+                    new_jobs.append(normalized)
+                    db.save_job(normalized, source="lever", classification=classification)
 
     return new_jobs
 
