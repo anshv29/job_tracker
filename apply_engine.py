@@ -344,6 +344,16 @@ def apply(page, row, spec, answers, resume_text, dry_run, before_submit=None):
         out.screenshot = form_tools.screenshot(page, row["job_key"], "needs-review")
         return out
 
+    # "Nothing required was left unanswered" is only meaningful if the real form
+    # was found. Every application form takes an email and a resume, so if those
+    # were not filled we are probably looking at the wrong part of the page.
+    filled_labels = " ".join(label.lower() for label, _ in out.filled)
+    if "resume" not in filled_labels or "email" not in filled_labels:
+        out.status = "failed"
+        out.reason = "Could not find the real application form (no email and resume fields were filled)"
+        out.screenshot = form_tools.screenshot(page, row["job_key"], "wrong-form")
+        return out
+
     out.screenshot = form_tools.screenshot(page, row["job_key"], "filled")
     if dry_run:
         out.status = "dry_ok"

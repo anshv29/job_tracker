@@ -152,13 +152,13 @@ def locator_for(ctx, fid):
 
 
 def find_form_context(page):
-    """The main page if the form is on it, else a Greenhouse iframe that holds one.
+    """The Greenhouse iframe if one holds the form, else the main page.
 
-    Some companies embed the Greenhouse form in an iframe on their own site.
+    Companies embed the form in an iframe on their own site, and that page
+    often has unrelated inputs of its own (search boxes), so the iframe has to
+    be checked first.
     """
     fields = "input[type=text], input[type=email], textarea"
-    if page.locator(fields).count() > 0:
-        return page
     for frame in page.frames:
         if frame != page.main_frame and "greenhouse.io" in frame.url and frame.locator(fields).count() > 0:
             return frame

@@ -155,13 +155,30 @@ def _label_country(label):
     return None
 
 
+_NEGATED = re.compile(r"without (?:requiring|needing|the need)|not (?:require|need)|no need for|do not require|don't require", re.I)
+
+
 def _authorization_key(label, job_location):
-    """Work authorization and sponsorship depend on the country the job is in."""
+    """Work authorization and sponsorship depend on the country the job is in.
+
+    "Are you authorized to work in X?" is a different question from "Will you
+    require sponsorship / work authorization?", and they have opposite answers
+    for someone who needs a visa, so wording that mixes or negates them is left
+    for a human instead of being guessed.
+    """
     low = (label or "").lower()
-    if "sponsor" in low:
+    asks_authorized = bool(re.search(r"authoriz|authoris|eligible to work|legally|right to work|work permit", low)) and "work" in low
+    asks_sponsorship = "sponsor" in low or bool(
+        re.search(r"\b(?:require|need)\b", low) and re.search(r"authoriz|authoris|visa|work permit|work status", low))
+
+    if asks_sponsorship and re.search(r"authoriz|authoris|eligible to work|legally", low) and \
+            re.search(r"\bare you\b|\bdo you (?:currently )?have\b", low) and not re.search(r"\bwill you\b", low):
+        return None  # "authorized to work ... and do you require sponsorship" is two questions in one
+    if _NEGATED.search(low):
+        return None
+    if asks_sponsorship:
         prefix = "needs_sponsorship_"
-    elif ("authoriz" in low or "authoris" in low or "legally" in low or "eligible to work" in low
-          or "right to work" in low or "work permit" in low) and "work" in low:
+    elif asks_authorized:
         prefix = "authorized_"
     else:
         return None
