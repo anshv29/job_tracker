@@ -10,4 +10,5 @@ BLOCKLISTED_COMPANIES = [
     "Apple",
     "Microsoft",
     "Netflix",
+    "LinkedIn",
 ]

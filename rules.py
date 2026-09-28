@@ -3,7 +3,11 @@ import re
 from config import BLOCKLISTED_COMPANIES
 from filters import regex_flags_grad_restriction
 
-AUTO_APPLY_ATS = {"greenhouse", "lever"}
+AUTO_APPLY_ATS = {"greenhouse", "lever", "ashby"}
+
+# The applicant wants software, data science/analyst/engineering and ML/AI roles.
+# Haiku files all of the data and ML/AI work under "DATA".
+WANTED_DOMAINS = {"SWE", "DATA"}
 
 _BLOCKLIST_PATTERNS = [
     re.compile(r"\b" + re.escape(name) + r"\b", re.IGNORECASE)
@@ -51,8 +55,8 @@ def evaluate(job, classification, ats):
 
     if domain is None:
         return result("needs_review", "LLM did not return a usable domain", grad)
-    if domain != "SWE":
-        return result("filtered_out", f"Role domain is {domain.title()}, not SWE", grad)
+    if domain not in WANTED_DOMAINS:
+        return result("filtered_out", f"Role domain is {domain.title()}, not software, data or ML", grad)
     if is_blocklisted(job.get("company")):
         return result("filtered_out", f"{job.get('company')} is on the blocklist", grad)
     if grad == "specific":
@@ -62,6 +66,7 @@ def evaluate(job, classification, ats):
                if no_text else "Could not tell whether a grad date or year of study is required")
         return result("needs_review", why, grad or "unclear")
     if ats not in AUTO_APPLY_ATS:
-        return result("needs_review", f"ATS is '{ats}', the applier only handles Greenhouse and Lever", grad)
+        return result("needs_review", f"ATS is '{ats}', the applier only handles Greenhouse, Lever and Ashby", grad)
 
-    return result("eligible", f"SWE role on {ats}, not blocklisted, no grad date or year requirement", grad)
+    role = "SWE" if domain == "SWE" else "Data/ML"
+    return result("eligible", f"{role} role on {ats}, not blocklisted, no grad date or year requirement", grad)

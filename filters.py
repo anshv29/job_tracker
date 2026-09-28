@@ -122,6 +122,12 @@ ROLE_TERMS = [
     "data engineer",
     "machine learning",
     "ml engineer",
+    "ai engineer",
+    "ai/ml",
+    "applied scientist",
+    "research engineer",
+    "computer vision",
+    "nlp",
     "artificial intelligence",
     "business intelligence",
     "analytics",
@@ -277,11 +283,11 @@ Classify this posting against ALL of the following criteria. Answer YES only if 
 
 The two extra fields below are separate from the YES/NO answer, so a posting can be YES (relevant) and still be restricted.
 
-4. DOMAIN CATEGORY: Which single category best matches the actual work? Answer exactly one of: SWE, Trading, Quant, Finance, Data, None. Capital markets, investment banking, corporate finance, private equity and asset/wealth management all count as Finance. Machine learning, analytics and data engineering count as Data. Only genuine software engineering counts as SWE.
-5. GRAD_RESTRICTION: The applicant is a first-year university student, so ANY explicit requirement about graduating class, graduation date, seniority or year of study is a possible disqualifier.
-   - "specific": the posting names a class year, graduation date, seniority level or year of study (for example "Class of 2026", "graduating in December 2027", "rising senior", "third year students", "final year"). A required degree that must be completed or obtained by a date (for example "degree obtained by summer 2027") also counts as specific.
-   - "unclear": it hints at such a requirement but you cannot tell.
-   - "none": no such requirement is stated anywhere.
+4. DOMAIN CATEGORY: Which single category best matches the actual work? Answer exactly one of: SWE, Trading, Quant, Finance, Data, None. Capital markets, investment banking, corporate finance, private equity and asset/wealth management all count as Finance. Data science, data analyst, data engineering, analytics engineering, business intelligence, machine learning and AI roles all count as Data, but only when the core work is analysing data, building data pipelines or models, or ML/AI. General business, operations, economics, consulting, audit, risk or people-team analyst roles are Finance or None, even if they involve some reporting. Software engineering counts as SWE.
+5. GRAD_RESTRICTION: The applicant is in their FIRST year of university, graduating May 2031, and would do this internship in Summer 2027 (after first year). Only a requirement the applicant clearly fails is a restriction.
+   - "specific": the posting states a graduation date or class year earlier than 2031 (for example "Class of 2027", "graduating in 2028"), a required year of study that is not first year ("rising junior", "rising senior", "penultimate year", "final year", "third year"), or a degree that must be completed or obtained by a date on or before 2030 (for example "degree obtained by summer 2027").
+   - "none": there is no such requirement. Wording like "currently enrolled", "pursuing a bachelor's degree", "returning to school after the internship", "open to all years", "freshman or sophomore", or a class year of 2031 or later does NOT exclude the applicant, so answer none.
+   - "unclear": only when the posting hints at a requirement but you genuinely cannot tell whether it excludes the applicant.
 
 Respond in EXACTLY this four-line format and nothing else:
 ANSWER: YES or NO
@@ -369,34 +375,57 @@ def passes_llm_gate(classification):
 
 # --- Grad restriction regex pass ----------------------------------------------
 #
-# Cheap first check before trusting the LLM. It can only say "I saw a
-# restrictive phrase", never "there is none", so a hit always wins.
+# Cheap first check before trusting the LLM. It only fires on phrasing that
+# clearly excludes a first-year student graduating May 2031, and it can only
+# say "found one", never "there is none", so a hit always wins. Merely
+# mentioning a grad date is fine ("class of 2031", "currently enrolled").
 
-RESTRICTIVE_GRAD_PATTERNS = [
-    re.compile(pattern, re.IGNORECASE) for pattern in [
-        r"\bclass of 20\d{2}\b",
-        r"\bgraduat(?:e|es|ing|ion)\s+(?:in|by|before|after|between|on)\b",
-        r"\bexpected graduation\b",
-        r"\bgraduation date\b",
-        r"\bfinal[- ]year\b",
-        r"\bpenultimate[- ]year\b",
+APPLICANT_GRAD_YEAR = 2031
+
+# Phrases that exclude a first-year no matter what year they mention.
+_ALWAYS_EXCLUDING = [
+    re.compile(p, re.IGNORECASE) for p in [
+        r"\b(?:final|last|penultimate)[- ](?:year|semester|term)\b",
         r"\brising (?:senior|junior)s?\b",
-        r"\byear of study\b",
-        r"\b(?:1st|2nd|3rd|4th|first|second|third|fourth)[- ]year\b",
+        r"\b(?:third|3rd|fourth|4th)[- ]year\b",
         r"\b(?:senior|junior) year\b",
-        r"\bgraduating (?:senior|class)\b",
-        r"\b(?:final|last) (?:semester|term)\b",
-        r"\b(?:fall|spring|winter|summer)(?: and (?:fall|spring|winter|summer))? graduates?\b",
+        # Plural "juniors"/"seniors" means students in those years ("Juniors working
+        # towards a bachelor's"). Singular "senior engineer" is a job level, so not matched.
+        r"\b(?:juniors|seniors)\b",
+        r"\bgraduating seniors?\b",
         r"\b(?:recent|new) grad(?:uate)?s?\b",
-        # "degree obtained by summer 2027", "completed by May 2027", etc.
-        r"\b(?:degree|diploma|program)\b[^.]{0,80}\b(?:by|before|prior to|no later than)\b[^.]{0,30}\b(?:20\d{2}|summer|fall|winter|spring)\b",
-        r"\b(?:obtained|completed|earned|conferred)\s+(?:by|before|in)\b[^.]{0,30}\b(?:20\d{2}|summer|fall|winter|spring)\b",
-        r"\bgraduat\w*\b[^.]{0,40}\b20\d{2}\b",
-        r"\b20\d{2}\b[^.]{0,40}\bgraduat\w*\b",
+        r"\b(?:fall|spring|winter|summer)(?: and (?:fall|spring|winter|summer))? graduates?\b",
     ]
 ]
+
+# Phrases where a year decides it: "class of 2027", "graduating in May 2028",
+# "degree obtained by summer 2027", "2027 graduates".
+_YEAR_CONTEXTS = [
+    re.compile(r"class of[^.;\n]{0,30}", re.IGNORECASE),
+    re.compile(r"\bgraduat(?:e|es|ing|ion)\b[^.;\n]{0,40}", re.IGNORECASE),
+    re.compile(r"\b20\d{2}\b[^.;\n]{0,25}\bgraduat\w*", re.IGNORECASE),
+    re.compile(r"\b(?:obtained|obtain|completed|complete|earned|finished|conferred)\b[^.;\n]{0,30}\b(?:by|before|prior to)\b[^.;\n]{0,25}", re.IGNORECASE),
+]
+# "graduate students", "graduate degree" are about level of study, not a date.
+_NOT_A_DATE = re.compile(r"\bgraduat\w*\s+(?:students?|school|degrees?|programs?|studies|level|courses|candidates?)\b", re.IGNORECASE)
+# "graduating after 2027" is a lower bound, which a 2031 graduate satisfies.
+_LOWER_BOUND = re.compile(r"\b(?:after|later|beyond|newer|at least|no earlier)\b", re.IGNORECASE)
 
 
 def regex_flags_grad_restriction(title, description):
     text = f"{title or ''} {description or ''}"
-    return any(p.search(text) for p in RESTRICTIVE_GRAD_PATTERNS)
+
+    if any(p.search(text) for p in _ALWAYS_EXCLUDING):
+        return True
+
+    for pattern in _YEAR_CONTEXTS:
+        for match in pattern.finditer(text):
+            span = match.group(0)
+            if _NOT_A_DATE.search(span) or _LOWER_BOUND.search(span):
+                continue
+            years = [int(y) for y in re.findall(r"\b(20\d{2})\b", span)]
+            # Only excluding if every year named is before the applicant's grad
+            # year: "class of 2029, 2030 or 2031" still includes them.
+            if years and max(years) < APPLICANT_GRAD_YEAR:
+                return True
+    return False
