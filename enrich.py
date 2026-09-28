@@ -2,11 +2,13 @@ import re
 
 import requests
 
+import ashby
 import greenhouse
 import lever
 
 _GREENHOUSE_URL = re.compile(r"(?:boards|job-boards)\.greenhouse\.io/(?P<slug>[^/?#]+)/jobs/(?P<id>\d+)")
 _LEVER_URL = re.compile(r"jobs\.lever\.co/(?P<slug>[^/?#]+)/(?P<id>[0-9a-f-]{36})")
+_ASHBY_URL = re.compile(r"jobs\.ashbyhq\.com/(?P<slug>[^/?#]+)/(?P<id>[0-9a-f-]{36})")
 
 
 def enrich_job(job):
@@ -25,14 +27,22 @@ def enrich_job(job):
             data = requests.get(api, timeout=10)
             data.raise_for_status()
             text = greenhouse.strip_html(data.json().get("content", ""))
-        else:
+        elif _LEVER_URL.search(url):
             match = _LEVER_URL.search(url)
-            if not match:
-                return job
             api = f"https://api.lever.co/v0/postings/{match['slug']}/{match['id']}"
             data = requests.get(api, timeout=10)
             data.raise_for_status()
             text = lever.normalize_job(data.json(), job["company"])["description"]
+        elif _ASHBY_URL.search(url):
+            # Ashby has no single-job endpoint, so read the board and pick the job.
+            match = _ASHBY_URL.search(url)
+            text = ""
+            for raw in ashby.fetch_ashby_jobs(match["slug"]):
+                if raw["id"] == match["id"]:
+                    text = raw.get("descriptionPlain") or ""
+                    break
+        else:
+            return job
     except Exception as e:
         print(f"Could not fetch full posting for {url}: {e}")
         return job

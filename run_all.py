@@ -2,6 +2,7 @@ import traceback
 
 from greenhouse import main as run_greenhouse
 from lever import main as run_lever
+from ashby import main as run_ashby
 from workday import main as run_workday
 from simplify import main as run_simplify
 
@@ -16,6 +17,12 @@ def main():
     print("=== Lever check ===")
     try:
         run_lever()
+    except Exception:
+        traceback.print_exc()
+
+    print("=== Ashby check ===")
+    try:
+        run_ashby()
     except Exception:
         traceback.print_exc()
 

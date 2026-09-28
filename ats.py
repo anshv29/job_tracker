@@ -15,6 +15,8 @@ def detect_ats(url):
         return "greenhouse"
     if "lever.co" in host:
         return "lever"
+    if "ashbyhq.com" in host:
+        return "ashby"
     if "myworkdayjobs.com" in host:
         return "workday"
     if "successfactors" in host:
@@ -29,7 +31,7 @@ def resolve_ats(url, source):
     custom careers page that hides the ATS.
     """
     ats = detect_ats(url)
-    if ats == "other" and source in ("greenhouse", "lever"):
+    if ats == "other" and source in ("greenhouse", "lever", "ashby"):
         return source
     return ats
 
@@ -39,6 +41,7 @@ if __name__ == "__main__":
         "https://boards.greenhouse.io/janestreet/jobs/123",
         "https://job-boards.greenhouse.io/point72/jobs/456",
         "https://jobs.lever.co/wealthsimple/abc-def",
+        "https://jobs.ashbyhq.com/ramp/34413f8d-26bf-4bbc-8ade-eb309a0e2245",
         "https://td.wd3.myworkdayjobs.com/en-US/TD_Bank_Careers/job/x",
         "https://career5.successfactors.com/career?company=abc",
         "https://www.example.com/careers/123",

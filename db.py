@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS applications (
     title TEXT NOT NULL,
     url TEXT NOT NULL,
     ats TEXT NOT NULL DEFAULT 'other'
-        CHECK (ats IN ('greenhouse', 'lever', 'workday', 'successfactors', 'other')),
+        CHECK (ats IN ('greenhouse', 'lever', 'ashby', 'workday', 'successfactors', 'other')),
     location TEXT,
     source TEXT,
     fit_reason TEXT,
@@ -79,6 +79,13 @@ def get_connection():
 def init_schema(conn):
     with conn.cursor() as cur:
         cur.execute(SCHEMA_SQL)
+        # CREATE TABLE IF NOT EXISTS won't touch a table that already exists, so
+        # widen the ats constraint explicitly for databases made before Ashby.
+        cur.execute("ALTER TABLE applications DROP CONSTRAINT IF EXISTS applications_ats_check")
+        cur.execute(
+            "ALTER TABLE applications ADD CONSTRAINT applications_ats_check "
+            "CHECK (ats IN ('greenhouse', 'lever', 'ashby', 'workday', 'successfactors', 'other'))"
+        )
 
 
 def insert_application(conn, job, source, ats, status="found", status_reason=None,

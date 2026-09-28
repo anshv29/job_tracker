@@ -16,6 +16,7 @@ import random
 import re
 from concurrent.futures import ThreadPoolExecutor
 
+import ashby
 import db
 import greenhouse
 import lever
@@ -94,6 +95,14 @@ def collect_candidates(per_source, sources, all_companies):
         except Exception as e:
             print(f"skipping lever/{company['label']}: {e}")
 
+    for company in (ashby.load_ashby_companies() if "ashby" in pools else []):
+        try:
+            for raw in ashby.fetch_ashby_jobs(company["slug"]):
+                if raw.get("isListed", True):
+                    pools["ashby"].append(ashby.normalize_job(raw, company["label"]))
+        except Exception as e:
+            print(f"skipping ashby/{company['label']}: {e}")
+
     if "simplify" in pools:
         for raw in simplify.fetch_simplify_listings():
             if raw.get("active"):
@@ -148,8 +157,8 @@ if __name__ == "__main__":
     parser.add_argument("--write-db", action="store_true")
     parser.add_argument("--max-llm", type=int, default=90,
                         help="cap on Haiku calls, split evenly across the three sources")
-    parser.add_argument("--sources", default="greenhouse,lever,simplify",
-                        help="comma separated: greenhouse,lever,simplify")
+    parser.add_argument("--sources", default="greenhouse,lever,ashby,simplify",
+                        help="comma separated: greenhouse,lever,ashby,simplify")
     parser.add_argument("--all-companies", action="store_true",
                         help="use every Greenhouse company instead of a random 40")
     args = parser.parse_args()
