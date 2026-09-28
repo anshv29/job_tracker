@@ -70,3 +70,49 @@ Known gotcha already fixed: a request with no timeout (`workday.py`) could hang,
 - More GitHub-hosted internship-list repos as additional sources beyond SimplifyJobs.
 - Expand bank coverage beyond TD/RBC/Scotiabank/CIBC to all Canadian banks.
 - Revisit whether keyword filtering alone could be dropped now that LLM classification is in place.
+
+## Auto-apply
+
+Every job that goes into an alert email is also saved to a Postgres table (Supabase) called `applications`. A second program, `applier.py`, runs on the Mac and fills in application forms for the jobs marked `eligible`.
+
+### How a job gets a status
+
+The classifier call that already decides "is this relevant" now also returns the role type and whether the posting has a grad date requirement, so there is no extra API call. `rules.py` then picks a status in this order:
+
+1. Not software, data or ML: `filtered_out`
+2. Company is in the blocklist (`config.py`): `filtered_out`
+3. Grad date or year of study that rules out a first year graduating May 2031, like "class of 2027", "final year" or "degree obtained by summer 2027": `filtered_out`
+4. Grad requirement unclear, or the full posting text could not be read: `needs_review`
+5. Not on Greenhouse, Lever or Ashby: `needs_review`
+6. Everything else: `eligible`
+
+Saying "currently enrolled" or "pursuing a bachelor's" does not count as a restriction. Every row has a `status_reason` that says why.
+
+### The applier
+
+- Works on Greenhouse, Lever and Ashby forms using Playwright.
+- Form fields are matched to keys in `private/answers.yaml`. Haiku is only allowed to pick one of those existing keys, never to write a value.
+- Optional questions are left blank. A required question it cannot answer, or a required essay, stops the application and marks the row `needs_review`, with a drafted answer saved in `draft_answer` when it is an essay.
+- A CAPTCHA or bot check stops that job. The applier never tries to get past one.
+- A job is only marked `submitted` after a confirmation message shows up. A screenshot is saved either way.
+- `DRY_RUN` is on unless `.env` says `DRY_RUN=false`. A dry run fills the form and takes a screenshot but never clicks submit and never writes to the database.
+- At most 25 applications per day, with a random pause between them.
+
+Try it: `python applier.py --limit 3` for eligible jobs, or `python applier.py --test-url <posting url>` for any posting.
+
+To run it every 2 hours on the Mac (9:05am to 9:05pm), once you are happy with the dry runs:
+
+```bash
+cp com.anshvaishnav.trcker.applier.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.anshvaishnav.trcker.applier.plist
+```
+
+### Private files
+
+`private/` is git ignored. It holds `answers.yaml` (what goes into forms), `resume.pdf` and the screenshots. Mac only packages are in `requirements-mac.txt`, and browsers come from `playwright install chromium`.
+
+### Board list
+
+`slugcheck.py --tracker <your tracker xlsx>` looks for each company on Greenhouse, Lever and Ashby, checks that the board really belongs to that company, and rewrites `registry.csv`. Boards that turned out to belong to a different company with a similar name are listed in `NOT_A_MATCH`.
+
+`classification_report.py --sample` shows how live postings would be classified without sending email.

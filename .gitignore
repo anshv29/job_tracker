@@ -7,3 +7,5 @@ scheduler_error.log
 __pycache__/
 *.pyc
 .DS_Store
+applier.log
+applier_error.log
