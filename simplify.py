@@ -3,6 +3,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
+import db
 from storage import init_db, has_seen, mark_seen
 from emailer import send_email, EMAIL_ADDRESS
 from filters import is_relevant_job, is_relevant_job_llm, get_job_tag, render_tag_badge
@@ -58,6 +59,7 @@ def run_simplify_check():
             mark_seen(conn, normalized)
             if is_relevant_job(normalized) and is_relevant_job_llm(normalized):
                 new_jobs.append(normalized)
+                db.save_job(normalized, source="simplify")
 
     return new_jobs
 

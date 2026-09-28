@@ -1,4 +1,5 @@
 import requests
+import db
 from storage import init_db, has_seen, mark_seen
 from emailer import send_email, EMAIL_ADDRESS
 from filters import is_relevant_job, is_relevant_job_llm, get_job_tag, render_tag_badge
@@ -42,6 +43,7 @@ def run_workday_check(tenant, host, site, company_label):
             mark_seen(conn, normalized)
             if is_relevant_job(normalized) and is_relevant_job_llm(normalized):
                 new_jobs.append(normalized)
+                db.save_job(normalized, source="workday")
 
     return new_jobs
 

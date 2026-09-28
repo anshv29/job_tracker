@@ -1,6 +1,4 @@
 import csv
-import html
-import re
 import time
 import traceback
 from datetime import datetime
@@ -17,39 +15,46 @@ REGISTRY_PATH = "registry.csv"
 RATE_LIMIT_SECONDS = 1.0
 
 
-def fetch_greenhouse_jobs(company_slug):
-    url = f"https://boards-api.greenhouse.io/v1/boards/{company_slug}/jobs"
-    response = requests.get(url, params={"content": "true"}, timeout=15)
+def fetch_lever_jobs(company_slug):
+    url = f"https://api.lever.co/v0/postings/{company_slug}"
+    response = requests.get(url, params={"mode": "json"}, timeout=15)
     response.raise_for_status()
-    data = response.json()
-    return data.get("jobs", [])
+    return response.json()
 
 
-def strip_html(raw_html):
-    unescaped = html.unescape(raw_html or "")
-    return re.sub(r"<[^>]+>", " ", unescaped)
-
-
-def to_eastern(iso_timestamp):
-    dt = datetime.fromisoformat(iso_timestamp)
-    eastern = dt.astimezone(ZoneInfo("America/New_York"))
-    return eastern.strftime("%Y-%m-%d %I:%M %p %Z")
+def to_eastern(unix_millis):
+    # Lever timestamps are in milliseconds, unlike the other connectors.
+    if not unix_millis:
+        return "Unknown"
+    dt = datetime.fromtimestamp(unix_millis / 1000, tz=ZoneInfo("UTC"))
+    return dt.astimezone(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %I:%M %p %Z")
 
 
 def normalize_job(raw_job, company_label):
+    categories = raw_job.get("categories") or {}
+
+    # The job body is split across a plain-text intro and a list of sections
+    # (responsibilities, requirements), so both go into the description that
+    # the filters read.
+    parts = [raw_job.get("descriptionPlain") or ""]
+    for section in raw_job.get("lists") or []:
+        parts.append(section.get("text") or "")
+        parts.append(section.get("content") or "")
+    parts.append(raw_job.get("additionalPlain") or "")
+
     return {
-        "id": f"greenhouse-{raw_job['id']}",
-        "title": raw_job["title"],
+        "id": f"lever-{raw_job['id']}",
+        "title": raw_job["text"],
         "company": company_label,
-        "location": raw_job.get("location", {}).get("name", "Unknown"),
-        "url": raw_job["absolute_url"],
-        "description": strip_html(raw_job.get("content", "")),
-        "posted": to_eastern(raw_job["updated_at"]) if raw_job.get("updated_at") else "Unknown",
+        "location": categories.get("location") or "Unknown",
+        "url": raw_job["hostedUrl"],
+        "description": " ".join(parts),
+        "posted": to_eastern(raw_job.get("createdAt")),
     }
 
 
-def run_greenhouse_check(company_slug, company_label):
-    jobs = fetch_greenhouse_jobs(company_slug)
+def run_lever_check(company_slug, company_label):
+    jobs = fetch_lever_jobs(company_slug)
     conn = init_db()
     new_jobs = []
 
@@ -59,7 +64,7 @@ def run_greenhouse_check(company_slug, company_label):
             mark_seen(conn, normalized)
             if is_relevant_job(normalized) and is_relevant_job_llm(normalized):
                 new_jobs.append(normalized)
-                db.save_job(normalized, source="greenhouse")
+                db.save_job(normalized, source="lever")
 
     return new_jobs
 
@@ -97,32 +102,30 @@ def build_html_table(company_label, jobs):
     return html
 
 
-def load_greenhouse_companies(registry_path=REGISTRY_PATH):
+def load_lever_companies(registry_path=REGISTRY_PATH):
     companies = []
     with open(registry_path, newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            if row["platform"] == "greenhouse":
+        for row in csv.DictReader(f):
+            if row["platform"] == "lever":
                 companies.append({"slug": row["slug"], "label": row["company"]})
     return companies
 
 
 def main():
-    companies = load_greenhouse_companies()
-    print(f"Checking {len(companies)} Greenhouse companies...")
+    companies = load_lever_companies()
+    print(f"Checking {len(companies)} Lever companies...")
 
     for i, company in enumerate(companies):
         label = company["label"]
         try:
-            new_jobs = run_greenhouse_check(company["slug"], label)
+            new_jobs = run_lever_check(company["slug"], label)
             print(f"[{i + 1}/{len(companies)}] {label}: {len(new_jobs)} new relevant job(s)")
 
             if new_jobs:
-                html_body = build_html_table(label, new_jobs)
                 send_email(
                     to_address=EMAIL_ADDRESS,
                     subject=f"{len(new_jobs)} new job(s) at {label}",
-                    body=html_body,
+                    body=build_html_table(label, new_jobs),
                     is_html=True,
                 )
                 print(f"Sent email for {label}")

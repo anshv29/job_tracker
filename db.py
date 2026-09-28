@@ -3,6 +3,8 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 
+from ats import detect_ats
+
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -106,6 +108,18 @@ def insert_application(conn, job, source, ats, status="found", status_reason=Non
     except Exception as e:
         print(f"Warning: could not insert application {job.get('id')}: {e}")
         return False
+
+
+def save_job(job, source, **extra):
+    """One call for the connectors: connect, detect the ATS, insert.
+
+    Every connector needs these same three steps, so they live here once.
+    A missing connection just means the row isn't saved, the email still goes.
+    """
+    conn = get_connection()
+    if conn is None:
+        return False
+    return insert_application(conn, job, source=source, ats=detect_ats(job["url"]), **extra)
 
 
 def update_application(conn, job_key, **fields):
