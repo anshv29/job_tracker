@@ -90,13 +90,30 @@ SCAN_JS = r"""
       checked: !!el.checked,
     };
     if (type === "select") info.options = Array.from(el.options).map((o) => clean(o.textContent)).filter(Boolean);
+    if (type === "file") {
+      // Some ATS front ends (Greenhouse) run setup code in the visible
+      // "Attach" button's own click handler, so setting files directly on the
+      // hidden input skips that setup and the upload fails silently in the
+      // page's own JS. Tag the nearest visible trigger button so Python can
+      // click it for real and let a native file-chooser dialog do the rest.
+      const box = el.closest(".file-upload, [class*=fieldEntry], [data-field-path], li, fieldset") || el.parentElement;
+      const trigger = box ? box.querySelector("button, [role=button]") : null;
+      if (trigger) {
+        trigger.setAttribute("data-upload-trigger-for", String(n));
+        info.uploadTriggerFid = n;
+      }
+    }
     out.push(info);
     n++;
   }
 
   // Ashby answers Yes/No questions with two buttons, not radio inputs.
   for (const box of document.querySelectorAll("[data-field-path], [class*=fieldEntry]")) {
-    if (box.querySelector("input[type=radio]")) continue;
+    // Ashby renders some yes/no questions as two buttons plus a hidden native
+    // checkbox for form state - skip the box if either already answers it, so
+    // one question doesn't turn into a correctly-filled yesno AND a second,
+    // impossible-to-fill "checkbox" for the same field.
+    if (box.querySelector("input[type=radio], input[type=checkbox]")) continue;
     const buttons = Array.from(box.querySelectorAll("button")).filter((b) => /^(yes|no)$/i.test(clean(b.innerText)));
     if (buttons.length !== 2 || box.getAttribute("data-fid")) continue;
     box.setAttribute("data-fid", String(n));

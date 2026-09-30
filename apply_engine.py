@@ -35,6 +35,7 @@ class Outcome:
     filled: list = field(default_factory=list)      # (question, value shown)
     blank_optional: list = field(default_factory=list)
     problems: list = field(default_factory=list)    # required questions we could not answer
+    to_verify: list = field(default_factory=list)   # (sig, value) text fills worth double-checking stuck
 
 
 def group_questions(fields):
@@ -66,7 +67,8 @@ def group_questions(fields):
             kind = "text"
         questions.append({"kind": kind, "label": f["label"], "required": f["required"], "options": f.get("options", []),
                           "fids": [f["fid"]], "name": f["name"], "id": f["id"], "placeholder": f["placeholder"],
-                          "type": f["type"], "value": f.get("value", "")})
+                          "type": f["type"], "value": f.get("value", ""),
+                          "upload_trigger_fid": f.get("uploadTriggerFid")})
     return questions
 
 
@@ -155,18 +157,84 @@ def file_role(q, seen_resume):
     return "other" if seen_resume else "resume?"
 
 
-def fill_form(ctx, page, job, answers, resume_bytes, handled, out):
-    """One pass over the form. Returns the number of controls it touched."""
-    questions = group_questions(form_tools.scan_fields(ctx))
-    touched = 0
+def upload_file(ctx, page, fid, trigger_fid, file_bytes, filename):
+    """Attaches a file and confirms the page didn't reject it.
 
-    # Field numbers are reassigned on every scan, so a question is identified by
-    # what it says instead. The counter keeps two identical labels apart.
+    Clicking the real trigger button (when one was found at scan time) and
+    answering the native file-chooser dialog it opens matches what a person
+    does, and avoids a Greenhouse bug where setting the hidden input's files
+    directly skips setup the button's own click handler does first, leaving
+    the upload to fail with a silent page-side JS error.
+    """
+    for attempt in range(2):
+        try:
+            if trigger_fid is not None:
+                with page.expect_file_chooser(timeout=3000) as chooser_info:
+                    form_tools.locator_for(ctx, trigger_fid).click()
+                chooser_info.value.set_files(
+                    files=[{"name": filename, "mimeType": "application/pdf", "buffer": file_bytes}])
+            else:
+                raise RuntimeError("no trigger button found, use the input directly")
+        except Exception:
+            form_tools.locator_for(ctx, fid).set_input_files(
+                files=[{"name": filename, "mimeType": "application/pdf", "buffer": file_bytes}])
+        # Some ATS (Lever confirmed) parse the resume after upload and briefly
+        # overwrite fields like location with whatever they extracted, even
+        # blanking them if they found nothing. Waiting this out here, before
+        # any other field gets filled, avoids losing a value to that reset.
+        page.wait_for_timeout(5000)
+        if not visible_errors(ctx):
+            return True
+    return False
+
+
+def verify_and_refill(ctx, out):
+    """Re-checks text fields we filled are still holding their value.
+
+    Confirmed on Lever: a resume upload can trigger the site's own resume-parse
+    autofill, which overwrites a field like location shortly afterward - even
+    blanking it if parsing found nothing there. upload_file() already waits
+    this out before typing, but this is a second, independent check right
+    before the screenshot, in case something else resets a field later.
+    """
+    if not out.to_verify:
+        return
+    current = {q["sig"]: q for q in scan_questions(ctx)}
+    for sig, expected in out.to_verify:
+        q = current.get(sig)
+        if not q or not q["fids"]:
+            continue
+        loc = form_tools.locator_for(ctx, q["fids"][0])
+        try:
+            actual = loc.input_value(timeout=2000)
+        except Exception:
+            continue
+        if actual != expected:
+            try:
+                loc.fill(expected, timeout=3000)
+            except Exception as e:
+                print(f"    could not re-fill '{q['label'][:50]}' after it reset: {str(e)[:90]}")
+
+
+def scan_questions(ctx):
+    """group_questions, plus a stable sig for each one.
+
+    Field numbers are reassigned on every scan, so a question is identified by
+    what it says instead. The counter keeps two identical labels apart.
+    """
+    questions = group_questions(form_tools.scan_fields(ctx))
     seen_count = {}
     for q in questions:
         base = (q["kind"], q["label"], tuple(q["options"]))
         seen_count[base] = seen_count.get(base, 0) + 1
         q["sig"] = base + (seen_count[base],)
+    return questions
+
+
+def fill_form(ctx, page, job, answers, resume_bytes, handled, out):
+    """One pass over the form. Returns the number of controls it touched."""
+    questions = scan_questions(ctx)
+    touched = 0
 
     # Upload the resume first: some sites read it and prefill fields, and
     # anything we type afterwards then wins.
@@ -179,12 +247,12 @@ def fill_form(ctx, page, job, answers, resume_bytes, handled, out):
             continue  # a file is already attached
         role = file_role(q, has_labeled_resume)
         if role in ("resume", "resume?"):
-            form_tools.locator_for(ctx, q["fids"][0]).set_input_files(
-                files=[{"name": RESUME_UPLOAD_NAME, "mimeType": "application/pdf", "buffer": resume_bytes}])
-            out.filled.append(("Resume", RESUME_UPLOAD_NAME))
-            has_labeled_resume = True
-            touched += 1
-            page.wait_for_timeout(2500)
+            if upload_file(ctx, page, q["fids"][0], q.get("upload_trigger_fid"), resume_bytes, RESUME_UPLOAD_NAME):
+                out.filled.append(("Resume", RESUME_UPLOAD_NAME))
+                has_labeled_resume = True
+                touched += 1
+            else:
+                out.problems.append((q["label"] or "Resume", "the resume upload failed with a page error, needs a human to attach it", False))
         elif q["required"]:
             out.problems.append((q["label"] or "file upload", "a required file other than the resume is asked for", False))
 
@@ -196,8 +264,32 @@ def fill_form(ctx, page, job, answers, resume_bytes, handled, out):
             continue
         handled.add(q["sig"])
 
-        # A lone required checkbox is usually "I have read the privacy notice".
+        # A lone checkbox is either "I have read the privacy notice" (check it) or
+        # a yes/no eligibility question rendered as a single on/off box, in which
+        # case checked means Yes and left unchecked means No - both answered
+        # confidently, so "No" is not treated as skipped or left blank.
         if q["kind"] == "checkbox" and len(q["options"]) == 1:
+            # Haiku is not trusted to pick the key for a binary checkbox: a wrong
+            # guess here becomes a real submitted answer, and superficially
+            # similar questions can mean opposite things (remote_ok answers
+            # "are you okay working remotely", not "can you commit to 5 days
+            # in-office", even though both mention "work" and "office").
+            bool_key = field_mapping.resolve_key(q["label"], job.get("location", ""), answers, use_llm=False)
+            bool_value = answers.get(bool_key, "") if bool_key else ""
+            if bool_value in ("Yes", "No"):
+                if bool_value == "Yes":
+                    loc = form_tools.locator_for(ctx, q["fids"][0])
+                    try:
+                        loc.check(force=True, timeout=4000)
+                    except Exception:
+                        # Some sites style a visible toggle over a zero-size real
+                        # input, which Playwright refuses to click even with
+                        # force=true. A raw DOM click has no such restriction.
+                        loc.evaluate("el => el.click()")
+                out.filled.append((label[:60], bool_value))
+                touched += 1
+                continue
+
             text = f"{q['label']} {q['options'][0]}"
             if q["required"] and CONSENT.search(text):
                 form_tools.locator_for(ctx, q["fids"][0]).check(force=True)
@@ -228,6 +320,11 @@ def fill_form(ctx, page, job, answers, resume_bytes, handled, out):
         if ok:
             out.filled.append((label[:60], value if key != "phone" else "(phone)"))
             touched += 1
+            if q["kind"] in ("text", "textarea"):
+                # Some ATS overwrite a text field shortly after a resume upload
+                # (their own resume-parse autofill, even when it finds nothing
+                # and just blanks the field) - worth confirming this stuck.
+                out.to_verify.append((q["sig"], value))
         elif q["required"]:
             out.problems.append((label, f"could not pick an option for '{value}'", False))
         else:
@@ -323,6 +420,8 @@ def apply(page, row, spec, answers, resume_text, dry_run, before_submit=None):
         if fill_form(ctx, page, job, answers, resume_bytes, handled, out) == 0:
             break
         page.wait_for_timeout(600)
+
+    verify_and_refill(ctx, out)
 
     reason = form_tools.captcha_reason(page)
     if reason:
