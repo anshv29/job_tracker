@@ -82,24 +82,27 @@ def build_html_table(company_label, jobs):
     """
     return html
 
-def main():
-    companies = [
-        {"tenant": "td", "host": "wd3", "site": "TD_Bank_Careers", "label": "TD"},
-        {"tenant": "rbc", "host": "wd3", "site": "RBCEARLYTALENT1", "label": "RBC (Early Talent)"},
-        {"tenant": "cibc", "host": "wd3", "site": "campus", "label": "CIBC (Campus)"},
-        {"tenant": "bmo", "host": "wd3", "site": "External", "label": "BMO"},
-        {"tenant": "cppib", "host": "wd10", "site": "cppinvestments", "label": "CPP Investments"},
-        {"tenant": "otppb", "host": "wd3", "site": "OntarioTeachers_Careers", "label": "Ontario Teachers' Pension Plan"},
-        {"tenant": "investpsp", "host": "wd3", "site": "psp_careers", "label": "PSP Investments"},
-        {"tenant": "sunlife", "host": "wd3", "site": "Experienced-Jobs", "label": "Sun Life Financial"},
-        {"tenant": "manulife", "host": "wd3", "site": "MFCJH_Jobs", "label": "Manulife"},
-        {"tenant": "brookfield", "host": "wd5", "site": "brookfield", "label": "Brookfield Asset Management"},
-        {"tenant": "bb", "host": "wd3", "site": "BlackBerry", "label": "BlackBerry"},
-        {"tenant": "cae", "host": "wd3", "site": "career", "label": "CAE"},
-        {"tenant": "clio", "host": "wd3", "site": "ClioCareerSite", "label": "Clio"},
-    ]
+# Module level so other scripts (reclassify_failed.py) can look a company's
+# tenant/host/site back up from just its label, without re-scraping this list.
+WORKDAY_COMPANIES = [
+    {"tenant": "td", "host": "wd3", "site": "TD_Bank_Careers", "label": "TD"},
+    {"tenant": "rbc", "host": "wd3", "site": "RBCEARLYTALENT1", "label": "RBC (Early Talent)"},
+    {"tenant": "cibc", "host": "wd3", "site": "campus", "label": "CIBC (Campus)"},
+    {"tenant": "bmo", "host": "wd3", "site": "External", "label": "BMO"},
+    {"tenant": "cppib", "host": "wd10", "site": "cppinvestments", "label": "CPP Investments"},
+    {"tenant": "otppb", "host": "wd3", "site": "OntarioTeachers_Careers", "label": "Ontario Teachers' Pension Plan"},
+    {"tenant": "investpsp", "host": "wd3", "site": "psp_careers", "label": "PSP Investments"},
+    {"tenant": "sunlife", "host": "wd3", "site": "Experienced-Jobs", "label": "Sun Life Financial"},
+    {"tenant": "manulife", "host": "wd3", "site": "MFCJH_Jobs", "label": "Manulife"},
+    {"tenant": "brookfield", "host": "wd5", "site": "brookfield", "label": "Brookfield Asset Management"},
+    {"tenant": "bb", "host": "wd3", "site": "BlackBerry", "label": "BlackBerry"},
+    {"tenant": "cae", "host": "wd3", "site": "career", "label": "CAE"},
+    {"tenant": "clio", "host": "wd3", "site": "ClioCareerSite", "label": "Clio"},
+]
 
-    for company in companies:
+
+def main():
+    for company in WORKDAY_COMPANIES:
         new_jobs = run_workday_check(company["tenant"], company["host"], company["site"], company["label"])
         print(f"{company['label']}: {len(new_jobs)} new relevant jobs")
 
