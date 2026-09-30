@@ -18,7 +18,7 @@ BLOCKLISTED_COMPANIES = [
 import os
 
 # At most this many applications are submitted per day (Toronto time).
-APPLIER_DAILY_CAP = 25
+APPLIER_DAILY_CAP = 10
 
 # Random pause between applications so they don't all land back to back.
 DELAY_SECONDS = (45, 150)
@@ -33,3 +33,9 @@ def dry_run():
 
 def headless():
     return os.getenv("HEADLESS", "false").strip().lower() == "true"
+
+
+def auto_apply_enabled():
+    # A master switch for the applier only. The scraper and alert emails don't
+    # read this at all, so they keep running no matter how it's set.
+    return os.getenv("AUTO_APPLY_ENABLED", "true").strip().lower() != "false"

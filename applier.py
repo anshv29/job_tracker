@@ -101,6 +101,11 @@ def main():
     parser.add_argument("--test-url", action="append", help="dry run against any posting URL, even one not in the database")
     args = parser.parse_args()
 
+    if not config.auto_apply_enabled():
+        print("Auto-apply is disabled (AUTO_APPLY_ENABLED=false in .env). "
+              "The scraper and alert emails are unaffected. Exiting.")
+        return
+
     dry_run = config.dry_run()
     print(f"{'DRY RUN (nothing is submitted or saved)' if dry_run else 'LIVE RUN'}")
 

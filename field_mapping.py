@@ -86,6 +86,7 @@ EXACT = {
     "veteran_status": ["veteran status", "veteran", "protected veteran status"],
     "disability_status": ["disability status", "disability"],
     "hispanic_latino": ["are you hispanic latino", "hispanic latino", "hispanic or latino"],
+    "sms_consent": ["sms consent", "text message consent", "consent to receive text messages"],
 }
 
 # The label only has to contain one of these phrases.
@@ -109,6 +110,13 @@ CONTAINS = {
                 "country do you reside in", "country of residence"],
     "grad_date_text": ["when do you graduate", "expected graduation date", "anticipated graduation"],
     "available_terms": ["which term", "internship term", "co op term"],
+    # TN/NAFTA/USMCA is the Canadian-citizen work-visa category; H-1B1 is the
+    # Chile/Singapore equivalent and E-3 is Australia's - some US forms phrase
+    # the same "are you visa-eligible" question with any one of these names.
+    "tn_eligible": ["tn visa", "tn status", "tn nafta", "tn usmca", "nafta professional", "usmca professional",
+                    "h 1b1", "h1b1", "e 3 visa", "e3 visa"],
+    "sms_consent": ["receive text messages", "receive sms", "opt in to receive text", "text messaging consent",
+                    "agree to receive text", "consent to text"],
 }
 
 KEY_HINTS = {
@@ -123,6 +131,8 @@ KEY_HINTS = {
     "how_did_you_hear": "how the applicant heard about the job", "previously_worked_here": "worked at this company before",
     "gender": "gender", "race_ethnicity": "race or ethnicity", "veteran_status": "veteran status",
     "disability_status": "disability status",
+    "tn_eligible": "eligible for TN, H-1B1 or E-3 visa status (Canadian citizen)",
+    "sms_consent": "consent to receive text/SMS messages",
 }
 
 _CANADA = re.compile(r"canad|toronto|vancouver|montreal|ottawa|waterloo|calgary|edmonton|mississauga|ontario|quebec|british columbia|alberta", re.I)
@@ -167,6 +177,10 @@ def _authorization_key(label, job_location):
     for a human instead of being guessed.
     """
     low = (label or "").lower()
+    # "Are you eligible for TN/H-1B1/E-3 status" looks like an authorization
+    # question but it's really tn_eligible's question - let that mapping handle it.
+    if re.search(r"\btn\b|nafta|usmca|h[- ]?1b1|e[- ]?3\b", low):
+        return None
     asks_authorized = bool(re.search(r"authoriz|authoris|eligible to work|legally|right to work|work permit", low)) and "work" in low
     asks_sponsorship = "sponsor" in low or bool(
         re.search(r"\b(?:require|need)\b", low) and re.search(r"authoriz|authoris|visa|work permit|work status", low))
