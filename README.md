@@ -111,6 +111,18 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.anshvaishnav.trcker.
 
 `private/` is git ignored. It holds `answers.yaml` (what goes into forms), `resume.pdf` and the screenshots. Mac only packages are in `requirements-mac.txt`, and browsers come from `playwright install chromium`.
 
+### Dashboard
+
+A GitHub Actions workflow (`.github/workflows/dashboard.yml`) emails a dashboard at 11pm Toronto time: applied today/this week/all time, a breakdown by ATS, today's submissions, the `needs_review` queue with draft answers, today's failures, and a 14 day chart of submissions. It also appends today's submitted jobs to `career_tracker.xlsx` if that file exists in the repo, otherwise it skips that step.
+
+Try it: `python dashboard.py --force`.
+
+### Cost and safety controls
+
+- `classification_report.py` never re-sends a job to Haiku once it already has a real classification in the database. Rerunning it on more than 50 jobs prints the estimated cost and stops, unless you pass `--yes`.
+- `AUTO_APPLY_ENABLED=false` in `.env` turns the applier off entirely without touching the scraper or alert emails.
+- The daily submission cap is `APPLIER_DAILY_CAP` in `config.py`.
+
 ### Board list
 
 `slugcheck.py --tracker <your tracker xlsx>` looks for each company on Greenhouse, Lever and Ashby, checks that the board really belongs to that company, and rewrites `registry.csv`. Boards that turned out to belong to a different company with a similar name are listed in `NOT_A_MATCH`.
