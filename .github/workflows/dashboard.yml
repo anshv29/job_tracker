@@ -1,0 +1,37 @@
+name: Auto-apply dashboard
+
+on:
+  schedule:
+    # GitHub Actions cron is UTC only and can't express "11pm Toronto" across
+    # DST, so both possible UTC times are scheduled (03:00 = 11pm EDT, 04:00 =
+    # 11pm EST) and dashboard.py itself only sends on the one that's actually
+    # 11pm Toronto right now - the other trigger exits immediately.
+    - cron: "17 3,4 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: job-dashboard
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Send dashboard email
+        env:
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+          EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python dashboard.py
