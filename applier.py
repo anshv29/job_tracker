@@ -39,6 +39,12 @@ def posting_id(row):
     match = re.search(r"gh_jid=(\d+)|greenhouse\.io/[^/]+/jobs/(\d+)", url)
     if match:
         return "greenhouse-" + (match.group(1) or match.group(2))
+    if "greenhouse.io" in url:
+        # boards.greenhouse.io/embed/job_app?token=<id> - no gh_jid, no /jobs/
+        # path, but still the same job id scheme as the other two forms above.
+        match = re.search(r"[?&]token=(\d+)", url)
+        if match:
+            return "greenhouse-" + match.group(1)
     match = re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", url)
     if match:
         return f"{row['ats']}-{match.group(0)}"
@@ -99,6 +105,7 @@ def main():
     parser.add_argument("--job-key", action="append")
     parser.add_argument("--retry-failed", action="store_true")
     parser.add_argument("--test-url", action="append", help="dry run against any posting URL, even one not in the database")
+    parser.add_argument("--max-submit", type=int, help="stop after this many real submissions, even if the daily cap allows more - for watching a supervised live run before trusting it unattended")
     args = parser.parse_args()
 
     if not config.auto_apply_enabled():
@@ -116,6 +123,9 @@ def main():
     # The cap is counted from the database, since each scheduled run is a new process.
     remaining = config.APPLIER_DAILY_CAP - submitted_today(conn)
     print(f"Daily cap {config.APPLIER_DAILY_CAP}, {max(remaining, 0)} left today")
+    if args.max_submit is not None:
+        remaining = min(remaining, args.max_submit)
+        print(f"This run is capped at {args.max_submit} real submission(s)")
     if remaining <= 0 and not dry_run:
         return
 
