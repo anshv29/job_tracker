@@ -47,10 +47,28 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -f jobs.db
-          if git diff --cached --quiet; then
-            echo "No change to jobs.db, nothing to commit"
-          else
+
+          # run_all.py wrote straight into the working-tree jobs.db, so save that
+          # file before any git operation touches the tree, then restore it after
+          # syncing with origin. Without this, "git reset --hard origin/main"
+          # would discard the jobs this run just marked seen.
+          cp jobs.db /tmp/jobs.db.new
+
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main
+            cp /tmp/jobs.db.new jobs.db
+            git add -f jobs.db
+            if git diff --cached --quiet; then
+              echo "No change to jobs.db, nothing to commit"
+              break
+            fi
             git commit -m "Update jobs.db [skip ci]"
-            git push
-          fi
+            if git push; then
+              break
+            fi
+            # Someone else pushed between fetch and push (a manual push from a
+            # laptop, most likely) - back off briefly and retry against the new tip.
+            echo "Push rejected, retrying ($attempt/5)..."
+            sleep $((attempt * 5))
+          done
